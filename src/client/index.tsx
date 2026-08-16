@@ -191,8 +191,9 @@ function handleReviewMessage(event: MessageEvent): void {
   if (data.type !== 'dsh-code-review-comments') return
   if (!reviewWindows.has(event.source as Window | null)) return
   const comments = sanitizeComments(data.comments)
-  if (comments.length === 0) return
   const kind = data.kind === 'lgtm' ? 'lgtm' : 'comment'
+  // 纯 LGTM 允许 0 条评论(报告只有批准声明一行);纯评论仍要求至少一条。
+  if (comments.length === 0 && kind !== 'lgtm') return
   const report = buildCommentReport(comments, kind, detectLang())
   const source = event.source as Window
   if (composerWriter !== null) {

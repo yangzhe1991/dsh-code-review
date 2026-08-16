@@ -354,5 +354,14 @@ check('isDiffText:普通文本不算', isDiffText('const a = 1\nconst b = 2\n'),
   checkTrue('standalone:en 词典注入脚本', en.includes('"submitComments":"Submit comments"'))
 }
 
+// 20. 纯 LGTM(0 条评论)
+{
+  check('report:纯 LGTM 单行', buildCommentReport([], 'lgtm', 'zh'), 'Looks good to me ✓')
+  check('report:纯 LGTM en 相同', buildCommentReport([], 'lgtm', 'en'), 'Looks good to me ✓')
+  check('report:纯评论 0 条保持空头', buildCommentReport([], 'comment', 'zh'), 'Code Review 意见,共 0 条:\n')
+  check('report:LGTM 带评论仍有计数', buildCommentReport([{ path: 'a', lineNo: 1, text: 'x' }], 'lgtm', 'zh').split('\n')[0],
+    'Looks good to me ✓ — Code Review 共 1 条评论:')
+}
+
 console.log(failed === 0 ? '\n全部通过 ✓' : `\n${failed} 个用例失败 ✗`)
 process.exit(failed === 0 ? 0 : 1)

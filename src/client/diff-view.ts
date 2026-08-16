@@ -272,6 +272,8 @@ export interface CrTexts {
   // —— 评论报告(提交到 DSH 对话框)——
   reportLgtmHeader: (count: number) => string
   reportCommentHeader: (count: number) => string
+  /** 纯 LGTM(0 条评论)时提交的报告文本,不带计数后缀。 */
+  reportLgtmBare: string
   // —— 独立标签页 ——
   stats: (added: number, removed: number, files: number) => string
   submitComments: string
@@ -301,6 +303,7 @@ export const CR_TEXTS: Record<Lang, CrTexts> = {
     collapseTitle: '收起原始 diff 文本',
     reportLgtmHeader: (count) => `Looks good to me ✓ — Code Review 共 ${count} 条评论:`,
     reportCommentHeader: (count) => `Code Review 意见,共 ${count} 条:`,
+    reportLgtmBare: 'Looks good to me ✓',
     stats: (added, removed, files) => `+${added} −${removed} · ${files} 个文件`,
     submitComments: '提交评论',
     copyRaw: '复制原始 diff',
@@ -327,6 +330,7 @@ export const CR_TEXTS: Record<Lang, CrTexts> = {
     collapseTitle: 'Hide raw diff text',
     reportLgtmHeader: (count) => `Looks good to me ✓ — Code Review with ${count} comment${count === 1 ? '' : 's'}:`,
     reportCommentHeader: (count) => `Code Review comments (${count}):`,
+    reportLgtmBare: 'Looks good to me ✓',
     stats: (added, removed, files) => `+${added} −${removed} · ${files} file${files === 1 ? '' : 's'}`,
     submitComments: 'Submit comments',
     copyRaw: 'Copy raw diff',
@@ -395,6 +399,8 @@ export function buildCommentReport(
   lang: Lang = 'zh',
 ): string {
   const texts = CR_TEXTS[lang]
+  // 纯 LGTM(0 条评论)只输出批准声明一行,不带空计数头。
+  if (kind === 'lgtm' && comments.length === 0) return texts.reportLgtmBare
   const header = kind === 'lgtm' ? texts.reportLgtmHeader(comments.length) : texts.reportCommentHeader(comments.length)
   const items = comments.map((comment, index) => {
     const lines = comment.text.split('\n')
@@ -663,7 +669,8 @@ document.getElementById('copy-raw').addEventListener('click', function (event) {
     syncSubmit()
   }
   function send(kind) {
-    if (comments.length === 0) return
+    // 纯评论要求至少一条;纯 LGTM(0 条评论)允许直接提交批准。
+    if (comments.length === 0 && kind !== 'lgtm') return
     var target = window.opener
     if (!target) {
       alert(T.openerClosed)
@@ -691,7 +698,7 @@ document.getElementById('copy-raw').addEventListener('click', function (event) {
     }
   })
   submitBtn.addEventListener('click', function () {
-    if (comments.length === 0) return
+    // 0 条评论时也允许打开面板(纯 LGTM 场景)。
     panel.hidden = !panel.hidden
   })
   document.getElementById('submit-lgtm').addEventListener('click', function () { send('lgtm') })
