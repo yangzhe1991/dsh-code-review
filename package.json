@@ -1,7 +1,7 @@
 {
   "name": "@yangzhe1991/dsh-code-review",
   "version": "0.1.0",
-  "description": "DSH Web 插件:Git Diff 自动转双列 Code Review 视图(带行号) | DSH Web plugin: auto-convert git diff output into a two-column code-review view with line numbers",
+  "description": "DSH Web 插件:git diff 一键打开独立双列 Code Review 页,支持语法高亮与行内评论 | DSH web plugin: one-click standalone two-column code review page for git diff, with syntax highlighting & inline comments",
   "publishConfig": {
     "access": "public"
   },
@@ -23,6 +23,19 @@
     "lib",
     "cordis.patch.yml",
     "README.zh.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yangzhe1991/dsh-code-review.git"
+  },
+  "homepage": "https://github.com/yangzhe1991/dsh-code-review",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "web",
+    "code-review",
+    "diff"
   ],
   "scripts": {
     "build": "node build.mjs",
