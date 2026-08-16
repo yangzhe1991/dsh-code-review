@@ -86,6 +86,12 @@ const THEME_VAR_DEFAULTS: Record<string, string> = {
   '--dsw-alias-state-error-primary': '#d92d20',
   '--dsw-alias-state-success-primary': '#12b76a',
   '--ds-font-family-code': 'ui-monospace, SFMono-Regular, Menlo, monospace',
+  // 语法高亮 token 颜色:官方 shiki 主题变量(与 DSH 深浅主题一致)。
+  '--shiki-token-keyword': '#7c3aed',
+  '--shiki-token-string': '#16a34a',
+  '--shiki-token-comment': '#9aa0a6',
+  '--shiki-token-constant': '#d97706',
+  '--shiki-token-function': '#2563eb',
 }
 
 /** 从宿主页面收集主题变量的实际值(独立标签页与 DSH 深浅色保持一致)。 */

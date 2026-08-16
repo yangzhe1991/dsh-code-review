@@ -13,7 +13,8 @@ const entry = join(dir, 'entry.mjs')
 writeFileSync(entry, `
 import { parseGitDiff, isDiffText, countStats, displayPath } from ${JSON.stringify(join(process.cwd(), 'src/client/diff-parse.ts'))}
 import { buildStandaloneHtml } from ${JSON.stringify(join(process.cwd(), 'src/client/diff-view.ts'))}
-globalThis.__test = { parseGitDiff, isDiffText, countStats, displayPath, buildStandaloneHtml }
+import { tokenizeLine, diffMidRange, langFor } from ${JSON.stringify(join(process.cwd(), 'src/client/diff-highlight.ts'))}
+globalThis.__test = { parseGitDiff, isDiffText, countStats, displayPath, buildStandaloneHtml, tokenizeLine, diffMidRange, langFor }
 `)
 await build({
   entryPoints: [entry],
@@ -24,7 +25,7 @@ await build({
   logLevel: 'silent',
 })
 await import('file://' + join(dir, 'out.mjs'))
-const { parseGitDiff, isDiffText, countStats, displayPath, buildStandaloneHtml } = globalThis.__test
+const { parseGitDiff, isDiffText, countStats, displayPath, buildStandaloneHtml, tokenizeLine, diffMidRange, langFor } = globalThis.__test
 
 let failed = 0
 function check(name, actual, expected) {
@@ -232,6 +233,60 @@ check('isDiffText:普通文本不算', isDiffText('const a = 1\nconst b = 2\n'),
   checkTrue('standalone:行号', html.includes('dsh-cr-num-old">1<'))
   checkTrue('standalone:原始文本保留', html.includes('<pre class="rawpre">'))
   checkTrue('standalone:HTML 骨架', html.includes('<!doctype html>') && html.includes('</html>'))
+}
+
+// 12. 语法高亮 tokenize
+{
+  const lang = { hashComment: false }
+  check('tokenize:关键字', tokenizeLine('const x = 1', lang).map((t) => [t.text, t.cls]),
+    [['const', 'tok-kw'], [' ', null], ['x', null], [' = ', null], ['1', 'tok-num']])
+  check('tokenize:字符串', tokenizeLine('a = "hi\\"s" // note', lang).map((t) => [t.text, t.cls]),
+    [['a', null], [' = ', null], ['"hi\\"s"', 'tok-str'], [' ', null], ['// note', 'tok-com']])
+  check('tokenize:# 注释(开启时)', tokenizeLine('x = 1 # c', { hashComment: true }).map((t) => [t.text, t.cls]),
+    [['x', null], [' = ', null], ['1', 'tok-num'], [' ', null], ['# c', 'tok-com']])
+  check('tokenize:# 不开时是普通文本', tokenizeLine('#foo', { hashComment: false }).map((t) => t.cls), [null, null])
+  check('tokenize:十六进制数字', tokenizeLine('v = 0x1F_2', lang).map((t) => [t.text, t.cls]),
+    [['v', null], [' = ', null], ['0x1F_2', 'tok-num']])
+}
+
+// 13. 行内字符级 diff 范围
+{
+  check('diffMid:中间改几个字符', diffMidRange('foo(bar, baz)', 'foo(bar, qux)'),
+    { oldStart: 9, oldEnd: 12, newStart: 9, newEnd: 12 })
+  // 后缀 't x = 1' 两侧相同(t 也匹配),中段是 'cons' vs 'le'
+  check('diffMid:纯前缀变化', diffMidRange('const x = 1', 'let x = 1'),
+    { oldStart: 0, oldEnd: 4, newStart: 0, newEnd: 2 })
+  check('diffMid:尾部追加', diffMidRange('abc', 'abcX'),
+    { oldStart: 3, oldEnd: 3, newStart: 3, newEnd: 4 })
+  check('diffMid:相同文本为 null', diffMidRange('same', 'same'), null)
+}
+
+// 14. 语言推断
+{
+  check('langFor:ts 开启且无 # 注释', langFor('src/a.ts'), { hashComment: false })
+  check('langFor:py 开启 # 注释', langFor('src/a.py'), { hashComment: true })
+  check('langFor:/dev/null 未知', langFor('/dev/null'), null)
+  check('langFor:无扩展名未知', langFor('Makefile'), null)
+}
+
+// 15. 独立页 HTML 集成高亮
+{
+  const diff = 'diff --git a/x.ts b/x.ts\n--- a/x.ts\n+++ b/x.ts\n@@ -1,2 +1,2 @@\n const a = 1\n-const b = 2\n+let b = 2\n'
+  const files = parseGitDiff(diff)
+  const html = buildStandaloneHtml(files, {}, diff)
+  checkTrue('standalone:关键字 token', html.includes('class="tok-kw"'))
+  checkTrue('standalone:数字 token', html.includes('class="tok-num"'))
+  checkTrue('standalone:change 行旧侧中段高亮', html.includes('dihl-mid-old'))
+  checkTrue('standalone:change 行新侧中段高亮', html.includes('dihl-mid-new'))
+  // 后缀 't b = 2' 两侧相同,旧侧中段是 'cons'、新侧中段是 'le'
+  checkTrue('standalone:中段只包差异字符', html.includes('<span class="dihl-mid-old">cons</span>t b = '))
+  // 中段外的语法 token(数字)正常保留
+  checkTrue('standalone:中段外语法色保留', html.includes('t b = <span class="tok-num">2</span>'))
+  // 中段自身是语法 token 时,颜色保留在中段内
+  const diff2 = 'diff --git a/x.ts b/x.ts\n--- a/x.ts\n+++ b/x.ts\n@@ -1 +1 @@\n-x = 2\n+x = 3\n'
+  const html2 = buildStandaloneHtml(parseGitDiff(diff2), {}, diff2)
+  checkTrue('standalone:中段内数字 token 保留', html2.includes('<span class="dihl-mid-old"><span class="tok-num">2</span></span>'))
+  checkTrue('standalone:中段内关键字 token 保留', buildStandaloneHtml(parseGitDiff('diff --git a/x.ts b/x.ts\n--- a/x.ts\n+++ b/x.ts\n@@ -1 +1 @@\n-return 1\n+return 2\n'), {}, '').includes('<span class="dihl-mid-old"><span class="tok-num">1</span></span>'))
 }
 
 console.log(failed === 0 ? '\n全部通过 ✓' : `\n${failed} 个用例失败 ✗`)

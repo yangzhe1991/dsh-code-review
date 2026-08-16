@@ -15,6 +15,8 @@
 
 import type { DiffRow, FileDiff } from './diff-parse'
 import { countStats, displayPath } from './diff-parse'
+import { diffMidRange, langFor, tokenizeLine } from './diff-highlight'
+import type { DiffMidRange, LineLang, Token } from './diff-highlight'
 
 /** HTML 转义:diff 行内容是不可信文本,直接拼 HTML 必须先转义。 */
 function escapeHtml(text: string): string {
@@ -146,6 +148,20 @@ main { margin-left: 220px; padding: 16px 24px 60px; }
   user-select: none;
 }
 .dsh-cr-nonl { color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+/* 语法高亮:颜色复用官方 shiki 变量(与 DSH 深浅主题一致,取不到时兜底) */
+.tok-kw { color: var(--shiki-token-keyword, #7c3aed); }
+.tok-str { color: var(--shiki-token-string, #16a34a); }
+.tok-com { color: var(--shiki-token-comment, #9aa0a6); font-style: italic; }
+.tok-num { color: var(--shiki-token-constant, #d97706); }
+/* 行内字符级差异:change 行中段加深背景(旧侧红/新侧绿) */
+.dihl-mid-old {
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 32%, transparent);
+  border-radius: 2px;
+}
+.dihl-mid-new {
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 32%, transparent);
+  border-radius: 2px;
+}
 .rawwrap { margin: 16px 24px; }
 .rawsummary { font-size: 12px; color: var(--dsw-alias-label-secondary); cursor: pointer; }
 .rawpre { white-space: pre-wrap; word-break: break-word; font: inherit; margin: 8px 0 0; }
@@ -161,33 +177,79 @@ const STANDALONE_STATUS_LABEL: Record<FileDiff['status'], string> = {
   mode: '权限变更',
 }
 
+/** 把 token 序列渲染成 HTML(转义在 token 级做,保证安全)。 */
+function tokensToHtml(tokens: Token[]): string {
+  let out = ''
+  for (const token of tokens) {
+    const escaped = escapeHtml(token.text)
+    out += token.cls === null ? escaped : `<span class="${token.cls}">${escaped}</span>`
+  }
+  return out
+}
+
+/**
+ * 渲染一个内容格:基础语法高亮 + 可选的行内字符级差异高亮。
+ * @param text 内容文本(可能为空)。
+ * @param side 旧/新侧(决定中段背景用红还是绿)。
+ * @param noEol 末尾无换行标记。
+ * @param diffRange 行内差异范围(仅 change 行;null = 不做字符级高亮)。
+ * @param lang 语法高亮配置(无法识别语言时 null)。
+ */
+function cellHtml(
+  text: string | undefined,
+  side: 'old' | 'new',
+  noEol: boolean | undefined,
+  diffRange: DiffMidRange | null,
+  lang: LineLang | null,
+): string {
+  if (text === undefined) return `<div class="dsh-cr-cell dsh-cr-cell-${side}"></div>`
+  const mark = noEol === true ? '<span class="dsh-cr-nonl" title="该侧文件末尾无换行符">⏎</span>' : ''
+  let body: string
+  if (diffRange === null) {
+    // 无字符级高亮:整行一个语法段。
+    body = lang === null ? escapeHtml(text) : tokensToHtml(tokenizeLine(text, lang))
+  } else {
+    // 按 code point 切前/中/后三段(索引来自 diffMidRange 的
+    // Array.from 计算,切片同样按 code point,代理对不会断裂)。
+    const chars = Array.from(text)
+    const start = side === 'old' ? diffRange.oldStart : diffRange.newStart
+    const end = side === 'old' ? diffRange.oldEnd : diffRange.newEnd
+    const prefix = chars.slice(0, start).join('')
+    const mid = chars.slice(start, end).join('')
+    const suffix = chars.slice(end).join('')
+    const seg = (segText: string): string =>
+      lang === null ? escapeHtml(segText) : tokensToHtml(tokenizeLine(segText, lang))
+    body = seg(prefix)
+      + (mid !== '' ? `<span class="dihl-mid-${side}">${seg(mid)}</span>` : '')
+      + seg(suffix)
+  }
+  return `<div class="dsh-cr-cell dsh-cr-cell-${side}">${body}${mark}</div>`
+}
+
 /** 渲染一行(双列 4 格结构,直接产 HTML 字符串)。 */
-function rowHtml(row: DiffRow): string {
+function rowHtml(row: DiffRow, lang: LineLang | null): string {
   if (row.kind === 'gap') {
     return `<div class="dsh-cr-gaprow">${escapeHtml(row.gapText ?? '')}</div>`
   }
   const num = (no: number | undefined, side: string): string =>
     `<div class="dsh-cr-num dsh-cr-num-${side}">${no === undefined ? '' : String(no)}</div>`
-  const cell = (text: string | undefined, side: string, noEol: boolean | undefined): string => {
-    if (text === undefined) return `<div class="dsh-cr-cell dsh-cr-cell-${side}"></div>`
-    const mark = noEol === true ? '<span class="dsh-cr-nonl" title="该侧文件末尾无换行符">⏎</span>' : ''
-    return `<div class="dsh-cr-cell dsh-cr-cell-${side}">${escapeHtml(text)}${mark}</div>`
-  }
   const line = `<div class="dsh-cr-row dsh-cr-${row.kind}">`
   if (row.kind === 'ctx') {
-    return line + num(row.oldNo, 'old') + cell(row.oldText, 'old', row.oldNoEol)
-      + num(row.newNo, 'new') + cell(row.newText, 'new', row.newNoEol) + '</div>'
+    return line + num(row.oldNo, 'old') + cellHtml(row.oldText, 'old', row.oldNoEol, null, lang)
+      + num(row.newNo, 'new') + cellHtml(row.newText, 'new', row.newNoEol, null, lang) + '</div>'
   }
   if (row.kind === 'del') {
-    return line + num(row.oldNo, 'old') + cell(row.oldText, 'old', row.oldNoEol)
-      + num(undefined, 'new') + cell(undefined, 'new', undefined) + '</div>'
+    return line + num(row.oldNo, 'old') + cellHtml(row.oldText, 'old', row.oldNoEol, null, lang)
+      + num(undefined, 'new') + cellHtml(undefined, 'new', undefined, null, lang) + '</div>'
   }
   if (row.kind === 'add') {
-    return line + num(undefined, 'old') + cell(undefined, 'old', undefined)
-      + num(row.newNo, 'new') + cell(row.newText, 'new', row.newNoEol) + '</div>'
+    return line + num(undefined, 'old') + cellHtml(undefined, 'old', undefined, null, lang)
+      + num(row.newNo, 'new') + cellHtml(row.newText, 'new', row.newNoEol, null, lang) + '</div>'
   }
-  return line + num(row.oldNo, 'old') + cell(row.oldText, 'old', row.oldNoEol)
-    + num(row.newNo, 'new') + cell(row.newText, 'new', row.newNoEol) + '</div>'
+  // change 行:算行内字符级差异范围,两侧中段各自加深背景。
+  const range = diffMidRange(row.oldText ?? '', row.newText ?? '')
+  return line + num(row.oldNo, 'old') + cellHtml(row.oldText, 'old', row.oldNoEol, range, lang)
+    + num(row.newNo, 'new') + cellHtml(row.newText, 'new', row.newNoEol, range, lang) + '</div>'
 }
 
 /**
@@ -215,9 +277,11 @@ export function buildStandaloneHtml(files: FileDiff[], theme: Record<string, str
     const newPath = displayPath(file.newPath)
     const path = oldPath !== '' && oldPath !== newPath ? `${oldPath} → ${newPath}` : (newPath === '' ? oldPath : newPath)
     const meta = file.meta.filter((m) => !m.startsWith('index '))
+    // 语言推断:新路径优先(新增文件没有旧路径);/dev/null 时回退旧路径。
+    const lang = langFor(newPath) ?? langFor(oldPath)
     const rows = file.rows.length === 0
       ? `<div class="dsh-cr-gaprow">${escapeHtml(file.meta.join(' · ') || file.status)}</div>`
-      : file.rows.map(rowHtml).join('')
+      : file.rows.map((row) => rowHtml(row, lang)).join('')
     const head = `<header class="filehead"><span class="badge">${STANDALONE_STATUS_LABEL[file.status]}</span><span class="path">${escapeHtml(path)}</span>`
       + (meta.length > 0 ? `<span class="meta">${escapeHtml(meta.join(' · '))}</span>` : '')
       + '</header>'

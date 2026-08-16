@@ -15,6 +15,8 @@ The conversation itself stays untouched: when a git diff shows up, a small **"op
 
 - ⬅️➡️ **Two-column side-by-side view** — the old file on the left, the new file on the right, each with its own line numbers, exactly like a GitHub split review.
 - 🟥🟩 **Add/remove coloring** — deleted lines get a red background, added lines green; a consecutive delete-then-add block is paired row-by-row into a single "changed" row (the GitHub alignment).
+- 🔎 **Inline character-level highlight** — when only a few characters change on a line, exactly those characters get a stronger red/green background (common prefix/suffix trimmed).
+- 💡 **Basic syntax highlighting** — keywords, strings, comments, and numbers are colored using the official shiki theme variables (language inferred from the file extension; unknown languages just skip syntax coloring).
 - 🧷 **Hunk-aware** — every `@@` hunk header is kept as a separator row with its original section name; multiple files in one diff are split into per-file sections with a status badge (modified / new file / deleted / renamed / binary).
 - 🗂️ **File navigation sidebar** — every file is listed on the left; click to jump.
 - 📊 **Stats bar** — `+N −M · F files` in a sticky top bar, with a "copy raw diff" button and a collapsible raw-text section at the bottom.
