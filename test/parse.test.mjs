@@ -12,9 +12,9 @@ const dir = mkdtempSync(join(tmpdir(), 'dsh-cr-test-'))
 const entry = join(dir, 'entry.mjs')
 writeFileSync(entry, `
 import { parseGitDiff, isDiffText, countStats, displayPath } from ${JSON.stringify(join(process.cwd(), 'src/client/diff-parse.ts'))}
-import { buildStandaloneHtml } from ${JSON.stringify(join(process.cwd(), 'src/client/diff-view.ts'))}
+import { buildStandaloneHtml, buildCommentReport } from ${JSON.stringify(join(process.cwd(), 'src/client/diff-view.ts'))}
 import { tokenizeLine, diffMidRange, langFor } from ${JSON.stringify(join(process.cwd(), 'src/client/diff-highlight.ts'))}
-globalThis.__test = { parseGitDiff, isDiffText, countStats, displayPath, buildStandaloneHtml, tokenizeLine, diffMidRange, langFor }
+globalThis.__test = { parseGitDiff, isDiffText, countStats, displayPath, buildStandaloneHtml, buildCommentReport, tokenizeLine, diffMidRange, langFor }
 `)
 await build({
   entryPoints: [entry],
@@ -25,7 +25,7 @@ await build({
   logLevel: 'silent',
 })
 await import('file://' + join(dir, 'out.mjs'))
-const { parseGitDiff, isDiffText, countStats, displayPath, buildStandaloneHtml, tokenizeLine, diffMidRange, langFor } = globalThis.__test
+const { parseGitDiff, isDiffText, countStats, displayPath, buildStandaloneHtml, buildCommentReport, tokenizeLine, diffMidRange, langFor } = globalThis.__test
 
 let failed = 0
 function check(name, actual, expected) {
@@ -230,7 +230,7 @@ check('isDiffText:普通文本不算', isDiffText('const a = 1\nconst b = 2\n'),
   checkTrue('standalone:统计条', html.includes('+1 −1 · 1 个文件'))
   checkTrue('standalone:文件导航', html.includes('<a class="navitem" href="#file-0">x</a>'))
   checkTrue('standalone:change 行', html.includes('dsh-cr-change'))
-  checkTrue('standalone:行号', html.includes('dsh-cr-num-old">1<'))
+  checkTrue('standalone:行号', html.includes('dsh-cr-num-old" data-cr-path'))
   checkTrue('standalone:原始文本保留', html.includes('<pre class="rawpre">'))
   checkTrue('standalone:HTML 骨架', html.includes('<!doctype html>') && html.includes('</html>'))
 }
@@ -287,6 +287,39 @@ check('isDiffText:普通文本不算', isDiffText('const a = 1\nconst b = 2\n'),
   const html2 = buildStandaloneHtml(parseGitDiff(diff2), {}, diff2)
   checkTrue('standalone:中段内数字 token 保留', html2.includes('<span class="dihl-mid-old"><span class="tok-num">2</span></span>'))
   checkTrue('standalone:中段内关键字 token 保留', buildStandaloneHtml(parseGitDiff('diff --git a/x.ts b/x.ts\n--- a/x.ts\n+++ b/x.ts\n@@ -1 +1 @@\n-return 1\n+return 2\n'), {}, '').includes('<span class="dihl-mid-old"><span class="tok-num">1</span></span>'))
+}
+
+// 16. 评论报告文本
+{
+  const comments = [
+    { path: 'src/foo.ts', lineNo: 42, text: '这里应该用 const' },
+    { path: 'src/bar.ts', lineNo: 8, text: '变量名拼错了' },
+  ]
+  check('report:纯评论格式', buildCommentReport(comments, 'comment'),
+    'Code Review 意见,共 2 条:\n\n1. src/foo.ts:42 — 这里应该用 const\n2. src/bar.ts:8 — 变量名拼错了')
+  check('report:LGTM 头部', buildCommentReport(comments, 'lgtm').split('\n')[0],
+    'Looks good to me ✓ — Code Review 共 2 条评论:')
+  check('report:空列表', buildCommentReport([], 'comment'),
+    'Code Review 意见,共 0 条:\n')
+  // 多行评论:续行缩进三格,不破坏下一条编号结构
+  const multiline = [
+    { path: 'src/a.ts', lineNo: 10, text: '第一行\n第二行\n第三行' },
+    { path: 'src/b.ts', lineNo: 1, text: '下一条' },
+  ]
+  check('report:多行评论缩进', buildCommentReport(multiline, 'comment'),
+    'Code Review 意见,共 2 条:\n\n1. src/a.ts:10 — 第一行\n   第二行\n   第三行\n2. src/b.ts:1 — 下一条')
+}
+
+// 17. 独立页:行号格可评论定位属性
+{
+  const diff = 'diff --git a/x.ts b/x.ts\n--- a/x.ts\n+++ b/x.ts\n@@ -1,2 +1,2 @@\n const a = 1\n-const b = 2\n+let b = 2\n'
+  const html = buildStandaloneHtml(parseGitDiff(diff), {}, diff)
+  checkTrue('standalone:行号格带路径', html.includes('data-cr-path="x.ts"'))
+  checkTrue('standalone:行号格带行号', html.includes('data-cr-line="2"'))
+  checkTrue('standalone:行号格带侧别', html.includes('data-cr-side="new"'))
+  checkTrue('standalone:提交评论按钮', html.includes('id="submit-comments"'))
+  checkTrue('standalone:LGTM 提交选项', html.includes('id="submit-lgtm"'))
+  checkTrue('standalone:评论回传消息类型', html.includes("type: 'dsh-code-review-comments'"))
 }
 
 console.log(failed === 0 ? '\n全部通过 ✓' : `\n${failed} 个用例失败 ✗`)

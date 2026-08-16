@@ -23,7 +23,8 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { isDiffText, parseGitDiff } from './diff-parse'
-import { buildStandaloneHtml } from './diff-view'
+import { buildCommentReport, buildStandaloneHtml } from './diff-view'
+import type { ReviewComment } from './diff-view'
 
 // —— 可调参数 ——
 
@@ -85,6 +86,7 @@ const THEME_VAR_DEFAULTS: Record<string, string> = {
   '--dsw-alias-border-l3': '#cfcfd2',
   '--dsw-alias-state-error-primary': '#d92d20',
   '--dsw-alias-state-success-primary': '#12b76a',
+  '--dsw-alias-state-business-primary': '#3b6fe0',
   '--ds-font-family-code': 'ui-monospace, SFMono-Regular, Menlo, monospace',
   // 语法高亮 token 颜色:官方 shiki 主题变量(与 DSH 深浅主题一致)。
   '--shiki-token-keyword': '#7c3aed',
@@ -108,14 +110,65 @@ function collectThemeVars(): Record<string, string> {
 /**
  * 打开独立审查标签页。必须在用户点击手势内同步执行(Blob URL 生成 +
  * window.open 全同步),否则会被浏览器弹窗拦截。URL 延迟释放。
+ * 返回的子窗口引用登记进 reviewWindows,评论回传时校验消息来源。
  */
 function openReviewTab(text: string): void {
   const files = parseGitDiff(text)
   if (files.length === 0) return
   const html = buildStandaloneHtml(files, collectThemeVars(), text)
   const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
-  window.open(url, '_blank')
+  // 顺带清掉已关闭的旧子窗口引用。
+  for (const win of reviewWindows) {
+    if (win === null || win.closed) reviewWindows.delete(win)
+  }
+  const win = window.open(url, '_blank')
+  if (win !== null) reviewWindows.add(win)
   window.setTimeout(() => URL.revokeObjectURL(url), 60000)
+}
+
+// —— 评论回传(独立标签页 → DSH 对话框)——
+
+/** 本插件打开的审查子窗口(消息来源校验用)。 */
+const reviewWindows = new Set<Window | null>()
+
+/** 当前会话的 composer 写入器(header.actions 组件挂载时注册)。 */
+let composerWriter: ((text: string) => void) | null = null
+
+/** 校验回传评论的形状,过滤非法条目(跨窗口数据不可信)。 */
+function sanitizeComments(raw: unknown): ReviewComment[] {
+  if (!Array.isArray(raw)) return []
+  const out: ReviewComment[] = []
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) continue
+    const c = item as { path?: unknown; lineNo?: unknown; text?: unknown }
+    if (typeof c.path !== 'string' || typeof c.lineNo !== 'number' || typeof c.text !== 'string') continue
+    if (c.text.trim() === '') continue
+    out.push({ path: c.path, lineNo: Math.trunc(c.lineNo), text: c.text })
+  }
+  return out
+}
+
+/**
+ * 处理审查页回传的评论:组装「文件名:行号 — 评论」报告文本,写入
+ * 当前会话的 composer,并向子窗口回执。消息来源校验:必须是本插件
+ * 打开的窗口(与 origin 相比更可靠,blob 子窗口的 origin 语义有差异)。
+ */
+function handleReviewMessage(event: MessageEvent): void {
+  const data = event.data
+  if (typeof data !== 'object' || data === null) return
+  if (data.type !== 'dsh-code-review-comments') return
+  if (!reviewWindows.has(event.source as Window | null)) return
+  const comments = sanitizeComments(data.comments)
+  if (comments.length === 0) return
+  const kind = data.kind === 'lgtm' ? 'lgtm' : 'comment'
+  const report = buildCommentReport(comments, kind)
+  const source = event.source as Window
+  if (composerWriter !== null) {
+    composerWriter(report)
+    source.postMessage({ type: 'dsh-code-review-ack', ok: true }, '*')
+  } else {
+    source.postMessage({ type: 'dsh-code-review-ack', ok: false }, '*')
+  }
 }
 
 // —— 按钮注入(纯 DOM,不依赖 React)——
@@ -553,28 +606,44 @@ export function apply(ctx: ClientContext): void {
 }
 
 /**
- * 扫描器宿主组件(root 作用域,全局只此一份):挂载时注入样式并启动
- * 全文档扫描,卸载时停掉观察者。自身渲染 null,不占任何界面空间。
+ * 扫描器宿主组件(root 作用域,全局只此一份):挂载时注入样式、启动
+ * 全文档扫描、监听审查页的评论回传消息,卸载时全部清理。
+ * 自身渲染 null,不占任何界面空间。
  */
 function CodeReviewEnhancer() {
   useEffect(() => {
     ensureStyle()
     const scanner = new DiffScanner()
     scanner.start()
-    return () => scanner.stop()
+    const onMessage = handleReviewMessage
+    window.addEventListener('message', onMessage)
+    return () => {
+      scanner.stop()
+      window.removeEventListener('message', onMessage)
+    }
   }, [])
   return null
 }
 
 /**
- * 数据层监听(session 作用域,随会话切换自动重订阅):订阅当前会话 chat
- * 快照,把输出形似 git diff 的 bash 工具结果同步进文本表,扫描器据此给
- * 折叠的工具行加按钮。自身渲染 null。
+ * 数据层监听(session 作用域,随会话切换自动重订阅):
+ * 1. 订阅当前会话 chat 快照,把输出形似 git diff 的 bash 工具结果同步
+ *    进文本表,扫描器据此给折叠的工具行加按钮;
+ * 2. 注册当前会话的 composer 写入器 —— 审查页回传的评论经
+ *    inputActions.setDraft(官方单一写入口)写入对话框。自身渲染 null。
  */
-function DiffToolButtonWatcher({ useSession, sessionId }: PropsRuntime<'conversation.session.header.actions'>) {
+function DiffToolButtonWatcher({ useSession, sessionId, inputActions }: PropsRuntime<'conversation.session.header.actions'>) {
   const chat = useSession((state) => state.chat)
   useEffect(() => {
     if (chat !== undefined) syncDiffToolTexts(String(sessionId), chat)
   }, [chat, sessionId])
+  useEffect(() => {
+    // 只清理自己注册的写入器(多组件实例并存时互不误删)。
+    const writer = (text: string): void => inputActions.setDraft(text)
+    composerWriter = writer
+    return () => {
+      if (composerWriter === writer) composerWriter = null
+    }
+  }, [inputActions])
   return null
 }

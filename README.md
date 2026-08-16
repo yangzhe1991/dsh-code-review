@@ -22,6 +22,7 @@ The conversation itself stays untouched: when a git diff shows up, a small **"op
 - 📊 **Stats bar** — `+N −M · F files` in a sticky top bar, with a "copy raw diff" button and a collapsible raw-text section at the bottom.
 - 🎨 **Theme-matched** — the page inherits the DSH theme colors at open time, so light/dark mode stays consistent.
 - 📜 **Full-page scrolling** — no height caps; thousands of lines scroll naturally, and long lines wrap.
+- 💬 **Inline comments** — hover any line number and click to add a comment right on that line (like GitHub reviews). Comments accumulate with a per-line count badge; when done, submit them all at once — as **Looks Good To Me ✓** or **plain comments** — and they are written into the DSH composer as `file:line — comment` lines, ready to send to the agent.
 
 ### Where the button appears
 

@@ -162,6 +162,79 @@ main { margin-left: 220px; padding: 16px 24px 60px; }
   background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 32%, transparent);
   border-radius: 2px;
 }
+/* 行内评论:行号格可点击,hover 出现 + 号 */
+.dsh-cr-num[data-cr-line] {
+  cursor: pointer;
+  position: relative;
+}
+.dsh-cr-num[data-cr-line]:hover {
+  color: var(--dsw-alias-label-primary);
+}
+.dsh-cr-num[data-cr-line]:hover::after {
+  content: '+';
+  position: absolute;
+  left: 2px;
+  top: 0;
+  color: var(--dsw-alias-state-business-primary);
+  font-weight: 700;
+}
+.cc {
+  margin-left: 5px;
+  font-size: 10px;
+  line-height: 15px;
+  color: #fff;
+  background: var(--dsw-alias-state-business-primary);
+  border-radius: 8px;
+  padding: 0 5px;
+  user-select: none;
+}
+.comment-draft {
+  grid-column: 1 / -1;
+  padding: 8px 12px;
+  background: var(--dsw-alias-bg-layer-1);
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+.comment-list { margin-bottom: 8px; }
+.comment-item {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-markdown-code-block);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-bottom: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.comment-input {
+  width: 100%;
+  min-height: 60px;
+  resize: vertical;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-markdown-code-block);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.comment-actions { display: flex; gap: 8px; margin-top: 8px; }
+.submit-panel {
+  position: fixed;
+  top: 44px;
+  right: 16px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--dsw-alias-markdown-code-block);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+.submit-hint { font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .rawwrap { margin: 16px 24px; }
 .rawsummary { font-size: 12px; color: var(--dsw-alias-label-secondary); cursor: pointer; }
 .rawpre { white-space: pre-wrap; word-break: break-word; font: inherit; margin: 8px 0 0; }
@@ -175,6 +248,35 @@ const STANDALONE_STATUS_LABEL: Record<FileDiff['status'], string> = {
   renamed: '重命名',
   binary: '二进制',
   mode: '权限变更',
+}
+
+/** 标签页回传的一条行内评论(经 postMessage,形状由插件侧校验)。 */
+export interface ReviewComment {
+  path: string
+  lineNo: number
+  side?: string
+  text: string
+}
+
+/**
+ * 组装提交到 DSH 对话框的 Code Review 报告文本(纯函数,单测覆盖)。
+ * 格式:文件名:行号 — 评论,逐条编号;LGTM 时头部加批准声明。
+ * 评论文本含换行时,续行缩进三格与条目内容对齐,不破坏编号结构。
+ * @param comments 行内评论列表。
+ * @param kind 提交类型:lgtm(批准)/ comment(纯评论)。
+ */
+export function buildCommentReport(comments: readonly ReviewComment[], kind: 'lgtm' | 'comment'): string {
+  const header = kind === 'lgtm'
+    ? `Looks good to me ✓ — Code Review 共 ${comments.length} 条评论:`
+    : `Code Review 意见,共 ${comments.length} 条:`
+  const items = comments.map((comment, index) => {
+    const lines = comment.text.split('\n')
+    const first = `${index + 1}. ${comment.path}:${comment.lineNo} — ${lines[0]}`
+    // 续行缩进三格(与 "N. " 前缀等宽),避免与下一条编号混淆。
+    const rest = lines.slice(1).map((line) => `   ${line}`)
+    return [first, ...rest].join('\n')
+  })
+  return [header, '', ...items].join('\n')
 }
 
 /** 把 token 序列渲染成 HTML(转义在 token 级做,保证安全)。 */
@@ -227,12 +329,15 @@ function cellHtml(
 }
 
 /** 渲染一行(双列 4 格结构,直接产 HTML 字符串)。 */
-function rowHtml(row: DiffRow, lang: LineLang | null): string {
+function rowHtml(row: DiffRow, lang: LineLang | null, path: string): string {
   if (row.kind === 'gap') {
     return `<div class="dsh-cr-gaprow">${escapeHtml(row.gapText ?? '')}</div>`
   }
-  const num = (no: number | undefined, side: string): string =>
-    `<div class="dsh-cr-num dsh-cr-num-${side}">${no === undefined ? '' : String(no)}</div>`
+  // 行号格带评论定位信息(文件路径/行号/侧别),标签页脚本据此挂行内评论。
+  const num = (no: number | undefined, side: string): string => {
+    if (no === undefined) return `<div class="dsh-cr-num dsh-cr-num-${side}"></div>`
+    return `<div class="dsh-cr-num dsh-cr-num-${side}" data-cr-path="${escapeHtml(path)}" data-cr-line="${no}" data-cr-side="${side}">${no}</div>`
+  }
   const line = `<div class="dsh-cr-row dsh-cr-${row.kind}">`
   if (row.kind === 'ctx') {
     return line + num(row.oldNo, 'old') + cellHtml(row.oldText, 'old', row.oldNoEol, null, lang)
@@ -279,9 +384,10 @@ export function buildStandaloneHtml(files: FileDiff[], theme: Record<string, str
     const meta = file.meta.filter((m) => !m.startsWith('index '))
     // 语言推断:新路径优先(新增文件没有旧路径);/dev/null 时回退旧路径。
     const lang = langFor(newPath) ?? langFor(oldPath)
+    const commentPath = newPath !== '' && newPath !== '/dev/null' ? newPath : oldPath
     const rows = file.rows.length === 0
       ? `<div class="dsh-cr-gaprow">${escapeHtml(file.meta.join(' · ') || file.status)}</div>`
-      : file.rows.map((row) => rowHtml(row, lang)).join('')
+      : file.rows.map((row) => rowHtml(row, lang, commentPath)).join('')
     const head = `<header class="filehead"><span class="badge">${STANDALONE_STATUS_LABEL[file.status]}</span><span class="path">${escapeHtml(path)}</span>`
       + (meta.length > 0 ? `<span class="meta">${escapeHtml(meta.join(' · '))}</span>` : '')
       + '</header>'
@@ -302,9 +408,15 @@ ${STANDALONE_CSS}
 <header class="topbar">
   <span class="stats">+${stats.added} −${stats.removed} · ${stats.files} 个文件</span>
   <span class="topbar-actions">
+    <button class="btn" id="submit-comments" type="button">提交评论</button>
     <button class="btn" id="copy-raw" type="button">复制原始 diff</button>
   </span>
 </header>
+<div class="submit-panel" id="submit-panel" hidden>
+  <span class="submit-hint">把全部评论提交到 DSH 对话框:</span>
+  <button class="btn" id="submit-lgtm" type="button">Looks Good To Me ✓</button>
+  <button class="btn" id="submit-plain" type="button">仅提交评论</button>
+</div>
 <nav class="sidenav">${nav}</nav>
 <main>${sections}</main>
 <div class="rawwrap">
@@ -323,6 +435,144 @@ document.getElementById('copy-raw').addEventListener('click', function (event) {
     })
   }
 })
+</script>
+<script>
+/* 行内评论:点击行号格提评论,攒齐后提交回 DSH 对话框(postMessage)。 */
+(function () {
+  var comments = []
+  var draft = null
+  var submitBtn = document.getElementById('submit-comments')
+  var panel = document.getElementById('submit-panel')
+
+  function esc(text) {
+    return String(text)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  }
+  function syncSubmit() {
+    if (!submitBtn) return
+    submitBtn.textContent = comments.length === 0 ? '提交评论' : '提交评论 (' + comments.length + ')'
+  }
+  function sameLine(a, b) {
+    return a.path === b.path && a.lineNo === b.lineNo && a.side === b.side
+  }
+  function lineOf(num) {
+    return {
+      path: num.getAttribute('data-cr-path'),
+      lineNo: Number(num.getAttribute('data-cr-line')),
+      side: num.getAttribute('data-cr-side'),
+    }
+  }
+  function commentsOn(line) {
+    return comments.filter(function (c) { return sameLine(c, line) })
+  }
+  function closeDraft() {
+    if (draft && draft.parentNode) draft.parentNode.removeChild(draft)
+    draft = null
+  }
+  function findNum(line) {
+    var nums = document.querySelectorAll('.dsh-cr-num[data-cr-line]')
+    for (var i = 0; i < nums.length; i += 1) {
+      if (sameLine(lineOf(nums[i]), line)) return nums[i]
+    }
+    return null
+  }
+  function updateBadge(num) {
+    var badge = num.querySelector('.cc')
+    if (badge) badge.parentNode.removeChild(badge)
+    var n = commentsOn(lineOf(num)).length
+    if (n > 0) {
+      var span = document.createElement('span')
+      span.className = 'cc'
+      span.textContent = String(n)
+      num.appendChild(span)
+    }
+  }
+  function openDraft(num) {
+    closeDraft()
+    var line = lineOf(num)
+    var existing = commentsOn(line)
+    draft = document.createElement('div')
+    draft.className = 'comment-draft'
+    var html = ''
+    if (existing.length > 0) {
+      html += '<div class="comment-list">'
+      existing.forEach(function (c) { html += '<div class="comment-item">' + esc(c.text) + '</div>' })
+      html += '</div>'
+    }
+    html += '<textarea class="comment-input" placeholder="在此行添加评论…"></textarea>'
+    html += '<div class="comment-actions">'
+      + '<button class="btn" type="button" data-act="save">添加评论</button>'
+      + '<button class="btn" type="button" data-act="cancel">取消</button>'
+      + '</div>'
+    draft.innerHTML = html
+    num.parentElement.insertAdjacentElement('afterend', draft)
+    var ta = draft.querySelector('.comment-input')
+    ta.focus()
+    ta.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) saveDraft(line)
+    })
+    draft.querySelector('[data-act="save"]').addEventListener('click', function () { saveDraft(line) })
+    draft.querySelector('[data-act="cancel"]').addEventListener('click', closeDraft)
+  }
+  function saveDraft(line) {
+    if (!draft) return
+    var ta = draft.querySelector('.comment-input')
+    var text = ta.value.trim()
+    closeDraft()
+    if (text === '') return
+    comments.push({ path: line.path, lineNo: line.lineNo, side: line.side, text: text })
+    var num = findNum(line)
+    if (num) updateBadge(num)
+    syncSubmit()
+  }
+  function send(kind) {
+    if (comments.length === 0) return
+    var target = window.opener
+    if (!target) {
+      alert('原来的 DSH 页面已关闭,无法回传评论')
+      return
+    }
+    target.postMessage({
+      type: 'dsh-code-review-comments',
+      kind: kind,
+      comments: comments.map(function (c) {
+        return { path: c.path, lineNo: c.lineNo, side: c.side, text: c.text }
+      }),
+    }, '*')
+    panel.hidden = true
+  }
+  document.addEventListener('click', function (event) {
+    var target = event.target
+    var num = target && target.closest ? target.closest('.dsh-cr-num[data-cr-line]') : null
+    if (num) {
+      openDraft(num)
+      return
+    }
+    if (draft && !draft.contains(target)) closeDraft()
+    if (panel && target && target.closest && !panel.contains(target) && !target.closest('#submit-comments')) {
+      panel.hidden = true
+    }
+  })
+  submitBtn.addEventListener('click', function () {
+    if (comments.length === 0) return
+    panel.hidden = !panel.hidden
+  })
+  document.getElementById('submit-lgtm').addEventListener('click', function () { send('lgtm') })
+  document.getElementById('submit-plain').addEventListener('click', function () { send('comment') })
+  window.addEventListener('message', function (event) {
+    if (event.source !== window.opener) return
+    var data = event.data
+    if (!data || data.type !== 'dsh-code-review-ack') return
+    if (data.ok === false) {
+      alert('未能写入 DSH 对话框:当前没有打开中的会话')
+    } else {
+      submitBtn.textContent = '已发送 ✓'
+      setTimeout(syncSubmit, 3000)
+    }
+  })
+  syncSubmit()
+})()
 </script>
 </body>
 </html>
