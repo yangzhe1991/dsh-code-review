@@ -130,6 +130,8 @@ main { margin-left: 220px; padding: 16px 24px 60px; }
   min-width: 0;
   white-space: pre-wrap;
   word-break: break-word;
+  /* 制表符按 4 个字符宽度渲染(浏览器默认 8,代码阅读太松) */
+  tab-size: 4;
 }
 .dsh-cr-del .dsh-cr-num-old, .dsh-cr-del .dsh-cr-cell-old,
 .dsh-cr-change .dsh-cr-num-old, .dsh-cr-change .dsh-cr-cell-old {
@@ -237,7 +239,7 @@ main { margin-left: 220px; padding: 16px 24px 60px; }
 .submit-hint { font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .rawwrap { margin: 16px 24px; }
 .rawsummary { font-size: 12px; color: var(--dsw-alias-label-secondary); cursor: pointer; }
-.rawpre { white-space: pre-wrap; word-break: break-word; font: inherit; margin: 8px 0 0; }
+.rawpre { white-space: pre-wrap; word-break: break-word; font: inherit; margin: 8px 0 0; tab-size: 4; }
 `
 
 /** 变更类型的徽章文案(中文默认,由 CR_TEXTS 覆盖)。 */
