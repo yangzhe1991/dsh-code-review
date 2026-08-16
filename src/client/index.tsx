@@ -22,9 +22,19 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // 触发 SlotMap 声明合并:shell.overlay 由 layout、header.actions 由 conversation 声明。
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+// 声明合并:官方 locale 服务挂载在 cordis Context 上(由 dsh-client-locale
+// 提供;类型为 unknown,运行时做形状校验 —— 不直接依赖该包的类型)。
+import type {} from '@deepseek-ai/cordis'
 import { isDiffText, parseGitDiff } from './diff-parse'
-import { buildCommentReport, buildStandaloneHtml } from './diff-view'
-import type { ReviewComment } from './diff-view'
+import { buildCommentReport, buildStandaloneHtml, CR_TEXTS } from './diff-view'
+import type { Lang, ReviewComment } from './diff-view'
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** 官方 locale 服务(可选:官方装配不含 locale 时为 undefined)。 */
+    locale?: unknown
+  }
+}
 
 // —— 可调参数 ——
 
@@ -112,10 +122,32 @@ function collectThemeVars(): Record<string, string> {
  * window.open 全同步),否则会被浏览器弹窗拦截。URL 延迟释放。
  * 返回的子窗口引用登记进 reviewWindows,评论回传时校验消息来源。
  */
+/** 官方 locale 服务的最小形状(运行时形状校验,不依赖官方包类型)。 */
+interface LocaleService {
+  getLocale(): { active: string }
+}
+
+/** 官方 locale 服务(apply 时接管;官方装配不含 locale 时留 null)。 */
+let localeService: LocaleService | null = null
+
+/**
+ * 检测 DSH 界面语言:优先官方 locale 服务(用户设置 > 浏览器语言),
+ * 拿不到时退回浏览器语言(navigator),非 zh 一律按英文。
+ * 每次现读 —— 用户在设置里切换语言后,下一次生成按钮/标签页即生效,
+ * 无需订阅 locale/change 事件。
+ */
+function detectLang(): Lang {
+  if (localeService !== null) {
+    return localeService.getLocale().active === 'en' ? 'en' : 'zh'
+  }
+  const nav = navigator.languages?.[0] ?? navigator.language ?? ''
+  return nav.toLowerCase().startsWith('zh') ? 'zh' : 'en'
+}
+
 function openReviewTab(text: string): void {
   const files = parseGitDiff(text)
   if (files.length === 0) return
-  const html = buildStandaloneHtml(files, collectThemeVars(), text)
+  const html = buildStandaloneHtml(files, collectThemeVars(), text, detectLang())
   const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
   // 顺带清掉已关闭的旧子窗口引用。
   for (const win of reviewWindows) {
@@ -161,7 +193,7 @@ function handleReviewMessage(event: MessageEvent): void {
   const comments = sanitizeComments(data.comments)
   if (comments.length === 0) return
   const kind = data.kind === 'lgtm' ? 'lgtm' : 'comment'
-  const report = buildCommentReport(comments, kind)
+  const report = buildCommentReport(comments, kind, detectLang())
   const source = event.source as Window
   if (composerWriter !== null) {
     composerWriter(report)
@@ -186,13 +218,14 @@ function ensureButtons(
   getText: () => string | null,
   fold: { folded: boolean; onToggle: () => void } | null,
 ): void {
+  const texts = CR_TEXTS[detectLang()]
   if (host.querySelector('[data-dsh-cr-btn]') === null) {
     const btn = document.createElement('button')
     btn.type = 'button'
     btn.className = 'dsh-cr-openbtn'
     btn.dataset.dshCrBtn = ''
-    btn.textContent = '⧉ 新标签页打开'
-    btn.title = '在独立的浏览器标签页中打开 Code Review 视图'
+    btn.textContent = texts.openTab
+    btn.title = texts.openTabTitle
     btn.addEventListener('click', (event) => {
       // bash 工具行本体整行可点(展开),必须阻止事件传播到官方点击。
       event.stopPropagation()
@@ -207,8 +240,8 @@ function ensureButtons(
     btn.type = 'button'
     btn.className = 'dsh-cr-openbtn'
     btn.dataset.dshCrFold = ''
-    btn.textContent = fold.folded ? '展开' : '收起'
-    btn.title = fold.folded ? '展开原始 diff 文本' : '收起原始 diff 文本'
+    btn.textContent = fold.folded ? texts.expand : texts.collapse
+    btn.title = fold.folded ? texts.expandTitle : texts.collapseTitle
     btn.addEventListener('click', (event) => {
       event.stopPropagation()
       event.preventDefault()
@@ -575,17 +608,33 @@ class DiffScanner {
     this.applyFoldState(el, st)
     const host = buttonHostFor(el)
     const btn = host?.querySelector('[data-dsh-cr-fold]')
-    if (btn instanceof HTMLElement) btn.textContent = st.folded ? '展开' : '收起'
+    if (btn instanceof HTMLElement) {
+      const texts = CR_TEXTS[detectLang()]
+      btn.textContent = st.folded ? texts.expand : texts.collapse
+    }
   }
 }
 
 // —— 插件主体 ——
 
-/** 需要的 client 服务:slots(slot 注册)。 */
-export const inject = ['slots']
+/**
+ * 需要的 client 服务:slots(slot 注册)、locale(界面语言检测)。
+ *
+ * cordis 的服务访问必须先在这里声明注入,否则 apply 里读 ctx.locale
+ * 会抛 "cannot get property 'locale' without inject" —— loader entry
+ * 应用失败会让整个客户端组合树崩溃(白屏)。这也是上次事故的根因。
+ * 官方装配含 dsh-client-locale,服务存在;万一未来缺失,inject 返回
+ * undefined,detectLang 里会退到浏览器语言,不会崩。
+ */
+export const inject = ['slots', 'locale']
 
-/** Client 插件 body:注册扫描器宿主与数据层监听。 */
+/** Client 插件 body:接管官方 locale 服务,注册扫描器宿主与数据层监听。 */
 export function apply(ctx: ClientContext): void {
+  // 接管官方 locale 服务(运行时形状校验;缺省时 detectLang 退浏览器语言)。
+  const locale = ctx.locale
+  if (typeof locale === 'object' && locale !== null && typeof (locale as { getLocale?: unknown }).getLocale === 'function') {
+    localeService = locale as LocaleService
+  }
   ctx.slots.inject(
     'shell.overlay',
     () => ctx.slots.register({

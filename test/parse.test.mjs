@@ -322,5 +322,37 @@ check('isDiffText:普通文本不算', isDiffText('const a = 1\nconst b = 2\n'),
   checkTrue('standalone:评论回传消息类型', html.includes("type: 'dsh-code-review-comments'"))
 }
 
+// 18. 双语:评论报告
+{
+  const comments = [
+    { path: 'src/foo.ts', lineNo: 42, text: '应该用 const' },
+  ]
+  check('report:en 纯评论头', buildCommentReport(comments, 'comment', 'en').split('\n')[0],
+    'Code Review comments (1):')
+  check('report:en LGTM 头', buildCommentReport(comments, 'lgtm', 'en').split('\n')[0],
+    'Looks good to me ✓ — Code Review with 1 comment:')
+  check('report:en 多评论复数', buildCommentReport([comments[0], { path: 'b', lineNo: 1, text: 'x' }], 'comment', 'en').split('\n')[0],
+    'Code Review comments (2):')
+  check('report:zh 保持', buildCommentReport(comments, 'comment', 'zh').split('\n')[0],
+    'Code Review 意见,共 1 条:')
+}
+
+// 19. 双语:独立页
+{
+  const diff = 'diff --git a/x.ts b/x.ts\n--- a/x.ts\n+++ b/x.ts\n@@ -1 +1 @@\n-const a = 1\n+let a = 1\n'
+  const zh = buildStandaloneHtml(parseGitDiff(diff), {}, diff, 'zh')
+  const en = buildStandaloneHtml(parseGitDiff(diff), {}, diff, 'en')
+  checkTrue('standalone:zh 含中文按钮', zh.includes('>提交评论<') && zh.includes('>复制原始 diff<'))
+  checkTrue('standalone:en 含英文按钮', en.includes('>Submit comments<') && en.includes('>Copy raw diff<'))
+  checkTrue('standalone:en 无中文按钮', !en.includes('提交评论') && !en.includes('复制原始'))
+  checkTrue('standalone:en 统计复数', en.includes('+1 −1 · 1 file'))
+  checkTrue('standalone:en html lang', en.includes('<html lang="en">'))
+  checkTrue('standalone:zh html lang', zh.includes('<html lang="zh-CN">'))
+  checkTrue('standalone:en 徽章', en.includes('>modified</span>'))
+  checkTrue('standalone:en 评论占位符', en.includes('Add a comment on this line'))
+  checkTrue('standalone:zh 词典注入脚本', zh.includes('"submitComments":"提交评论"'))
+  checkTrue('standalone:en 词典注入脚本', en.includes('"submitComments":"Submit comments"'))
+}
+
 console.log(failed === 0 ? '\n全部通过 ✓' : `\n${failed} 个用例失败 ✗`)
 process.exit(failed === 0 ? 0 : 1)

@@ -23,6 +23,7 @@ The conversation itself stays untouched: when a git diff shows up, a small **"op
 - 🎨 **Theme-matched** — the page inherits the DSH theme colors at open time, so light/dark mode stays consistent.
 - 📜 **Full-page scrolling** — no height caps; thousands of lines scroll naturally, and long lines wrap.
 - 💬 **Inline comments** — hover any line number and click to add a comment right on that line (like GitHub reviews). Comments accumulate with a per-line count badge; when done, submit them all at once — as **Looks Good To Me ✓** or **plain comments** — and they are written into the DSH composer as `file:line — comment` lines, ready to send to the agent.
+- 🌐 **Bilingual UI** — follows the DSH interface language (official locale service): a Chinese UI gets Chinese buttons and review page, everything else gets English.
 
 ## Screenshots
 

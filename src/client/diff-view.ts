@@ -240,7 +240,7 @@ main { margin-left: 220px; padding: 16px 24px 60px; }
 .rawpre { white-space: pre-wrap; word-break: break-word; font: inherit; margin: 8px 0 0; }
 `
 
-/** 变更类型的徽章文案。 */
+/** 变更类型的徽章文案(中文默认,由 CR_TEXTS 覆盖)。 */
 const STANDALONE_STATUS_LABEL: Record<FileDiff['status'], string> = {
   modified: '修改',
   added: '新增文件',
@@ -248,6 +248,127 @@ const STANDALONE_STATUS_LABEL: Record<FileDiff['status'], string> = {
   renamed: '重命名',
   binary: '二进制',
   mode: '权限变更',
+}
+
+/** 界面语言(DSH 页面 lang 以 zh 开头算中文,其余一律英文)。 */
+export type Lang = 'zh' | 'en'
+
+/**
+ * 全部用户可见文案的中/英词典。聊天内按钮、独立标签页、评论报告
+ * 三处共用;独立标签页脱离 DSH 页面拿不到官方 locale,由生成时把
+ * 语言连同词典一起传入。函数字段仅供 TS 侧求值,注入标签页脚本时
+ * 只挑字符串字段(JSON 序列化会丢函数)。
+ */
+export interface CrTexts {
+  // —— 聊天内按钮 ——
+  openTab: string
+  openTabTitle: string
+  expand: string
+  collapse: string
+  expandTitle: string
+  collapseTitle: string
+  // —— 评论报告(提交到 DSH 对话框)——
+  reportLgtmHeader: (count: number) => string
+  reportCommentHeader: (count: number) => string
+  // —— 独立标签页 ——
+  stats: (added: number, removed: number, files: number) => string
+  submitComments: string
+  copyRaw: string
+  copied: string
+  sent: string
+  submitHint: string
+  submitLgtm: string
+  submitPlain: string
+  rawSummary: string
+  commentPlaceholder: string
+  addComment: string
+  cancel: string
+  noNewlineTitle: string
+  openerClosed: string
+  noSession: string
+  status: Record<FileDiff['status'], string>
+}
+
+export const CR_TEXTS: Record<Lang, CrTexts> = {
+  zh: {
+    openTab: '⧉ 新标签页打开',
+    openTabTitle: '在独立的浏览器标签页中打开 Code Review 视图',
+    expand: '展开',
+    collapse: '收起',
+    expandTitle: '展开原始 diff 文本',
+    collapseTitle: '收起原始 diff 文本',
+    reportLgtmHeader: (count) => `Looks good to me ✓ — Code Review 共 ${count} 条评论:`,
+    reportCommentHeader: (count) => `Code Review 意见,共 ${count} 条:`,
+    stats: (added, removed, files) => `+${added} −${removed} · ${files} 个文件`,
+    submitComments: '提交评论',
+    copyRaw: '复制原始 diff',
+    copied: '已复制',
+    sent: '已发送 ✓',
+    submitHint: '把全部评论提交到 DSH 对话框:',
+    submitLgtm: 'Looks Good To Me ✓',
+    submitPlain: '仅提交评论',
+    rawSummary: '原始 diff 文本',
+    commentPlaceholder: '在此行添加评论…',
+    addComment: '添加评论',
+    cancel: '取消',
+    noNewlineTitle: '该侧文件末尾无换行符',
+    openerClosed: '原来的 DSH 页面已关闭,无法回传评论',
+    noSession: '未能写入 DSH 对话框:当前没有打开中的会话',
+    status: STANDALONE_STATUS_LABEL,
+  },
+  en: {
+    openTab: '⧉ Open in new tab',
+    openTabTitle: 'Open the code review view in a separate browser tab',
+    expand: 'Expand',
+    collapse: 'Collapse',
+    expandTitle: 'Show raw diff text',
+    collapseTitle: 'Hide raw diff text',
+    reportLgtmHeader: (count) => `Looks good to me ✓ — Code Review with ${count} comment${count === 1 ? '' : 's'}:`,
+    reportCommentHeader: (count) => `Code Review comments (${count}):`,
+    stats: (added, removed, files) => `+${added} −${removed} · ${files} file${files === 1 ? '' : 's'}`,
+    submitComments: 'Submit comments',
+    copyRaw: 'Copy raw diff',
+    copied: 'Copied',
+    sent: 'Sent ✓',
+    submitHint: 'Submit all comments to the DSH composer:',
+    submitLgtm: 'Looks Good To Me ✓',
+    submitPlain: 'Comments only',
+    rawSummary: 'Raw diff text',
+    commentPlaceholder: 'Add a comment on this line…',
+    addComment: 'Add comment',
+    cancel: 'Cancel',
+    noNewlineTitle: 'No newline at end of file',
+    openerClosed: 'The original DSH page was closed; comments cannot be sent back',
+    noSession: 'Could not write to the DSH composer: no open session',
+    status: {
+      modified: 'modified',
+      added: 'new file',
+      deleted: 'deleted',
+      renamed: 'renamed',
+      binary: 'binary',
+      mode: 'mode change',
+    },
+  },
+}
+
+/** 只挑字符串字段,序列化进独立页脚本(JSON 会丢函数字段)。 */
+function stringTexts(texts: CrTexts): Record<string, string> {
+  return {
+    submitComments: texts.submitComments,
+    copyRaw: texts.copyRaw,
+    copied: texts.copied,
+    sent: texts.sent,
+    submitHint: texts.submitHint,
+    submitLgtm: texts.submitLgtm,
+    submitPlain: texts.submitPlain,
+    rawSummary: texts.rawSummary,
+    commentPlaceholder: texts.commentPlaceholder,
+    addComment: texts.addComment,
+    cancel: texts.cancel,
+    noNewlineTitle: texts.noNewlineTitle,
+    openerClosed: texts.openerClosed,
+    noSession: texts.noSession,
+  }
 }
 
 /** 标签页回传的一条行内评论(经 postMessage,形状由插件侧校验)。 */
@@ -264,11 +385,15 @@ export interface ReviewComment {
  * 评论文本含换行时,续行缩进三格与条目内容对齐,不破坏编号结构。
  * @param comments 行内评论列表。
  * @param kind 提交类型:lgtm(批准)/ comment(纯评论)。
+ * @param lang 报告语言(默认中文)。
  */
-export function buildCommentReport(comments: readonly ReviewComment[], kind: 'lgtm' | 'comment'): string {
-  const header = kind === 'lgtm'
-    ? `Looks good to me ✓ — Code Review 共 ${comments.length} 条评论:`
-    : `Code Review 意见,共 ${comments.length} 条:`
+export function buildCommentReport(
+  comments: readonly ReviewComment[],
+  kind: 'lgtm' | 'comment',
+  lang: Lang = 'zh',
+): string {
+  const texts = CR_TEXTS[lang]
+  const header = kind === 'lgtm' ? texts.reportLgtmHeader(comments.length) : texts.reportCommentHeader(comments.length)
   const items = comments.map((comment, index) => {
     const lines = comment.text.split('\n')
     const first = `${index + 1}. ${comment.path}:${comment.lineNo} — ${lines[0]}`
@@ -303,9 +428,10 @@ function cellHtml(
   noEol: boolean | undefined,
   diffRange: DiffMidRange | null,
   lang: LineLang | null,
+  noNewlineTitle: string,
 ): string {
   if (text === undefined) return `<div class="dsh-cr-cell dsh-cr-cell-${side}"></div>`
-  const mark = noEol === true ? '<span class="dsh-cr-nonl" title="该侧文件末尾无换行符">⏎</span>' : ''
+  const mark = noEol === true ? `<span class="dsh-cr-nonl" title="${escapeHtml(noNewlineTitle)}">⏎</span>` : ''
   let body: string
   if (diffRange === null) {
     // 无字符级高亮:整行一个语法段。
@@ -329,7 +455,7 @@ function cellHtml(
 }
 
 /** 渲染一行(双列 4 格结构,直接产 HTML 字符串)。 */
-function rowHtml(row: DiffRow, lang: LineLang | null, path: string): string {
+function rowHtml(row: DiffRow, lang: LineLang | null, path: string, noNewlineTitle: string): string {
   if (row.kind === 'gap') {
     return `<div class="dsh-cr-gaprow">${escapeHtml(row.gapText ?? '')}</div>`
   }
@@ -340,21 +466,21 @@ function rowHtml(row: DiffRow, lang: LineLang | null, path: string): string {
   }
   const line = `<div class="dsh-cr-row dsh-cr-${row.kind}">`
   if (row.kind === 'ctx') {
-    return line + num(row.oldNo, 'old') + cellHtml(row.oldText, 'old', row.oldNoEol, null, lang)
-      + num(row.newNo, 'new') + cellHtml(row.newText, 'new', row.newNoEol, null, lang) + '</div>'
+    return line + num(row.oldNo, 'old') + cellHtml(row.oldText, 'old', row.oldNoEol, null, lang, noNewlineTitle)
+      + num(row.newNo, 'new') + cellHtml(row.newText, 'new', row.newNoEol, null, lang, noNewlineTitle) + '</div>'
   }
   if (row.kind === 'del') {
-    return line + num(row.oldNo, 'old') + cellHtml(row.oldText, 'old', row.oldNoEol, null, lang)
-      + num(undefined, 'new') + cellHtml(undefined, 'new', undefined, null, lang) + '</div>'
+    return line + num(row.oldNo, 'old') + cellHtml(row.oldText, 'old', row.oldNoEol, null, lang, noNewlineTitle)
+      + num(undefined, 'new') + cellHtml(undefined, 'new', undefined, null, lang, noNewlineTitle) + '</div>'
   }
   if (row.kind === 'add') {
-    return line + num(undefined, 'old') + cellHtml(undefined, 'old', undefined, null, lang)
-      + num(row.newNo, 'new') + cellHtml(row.newText, 'new', row.newNoEol, null, lang) + '</div>'
+    return line + num(undefined, 'old') + cellHtml(undefined, 'old', undefined, null, lang, noNewlineTitle)
+      + num(row.newNo, 'new') + cellHtml(row.newText, 'new', row.newNoEol, null, lang, noNewlineTitle) + '</div>'
   }
   // change 行:算行内字符级差异范围,两侧中段各自加深背景。
   const range = diffMidRange(row.oldText ?? '', row.newText ?? '')
-  return line + num(row.oldNo, 'old') + cellHtml(row.oldText, 'old', row.oldNoEol, range, lang)
-    + num(row.newNo, 'new') + cellHtml(row.newText, 'new', row.newNoEol, range, lang) + '</div>'
+  return line + num(row.oldNo, 'old') + cellHtml(row.oldText, 'old', row.oldNoEol, range, lang, noNewlineTitle)
+    + num(row.newNo, 'new') + cellHtml(row.newText, 'new', row.newNoEol, range, lang, noNewlineTitle) + '</div>'
 }
 
 /**
@@ -365,8 +491,15 @@ function rowHtml(row: DiffRow, lang: LineLang | null, path: string): string {
  * @param theme 从宿主页面收集的 DSW 主题变量(name → value)。
  * @param rawText 原始 diff 文本(复制/保底查看用)。
  */
-export function buildStandaloneHtml(files: FileDiff[], theme: Record<string, string>, rawText: string): string {
+export function buildStandaloneHtml(
+  files: FileDiff[],
+  theme: Record<string, string>,
+  rawText: string,
+  lang: Lang = 'zh',
+): string {
+  const texts = CR_TEXTS[lang]
   const stats = countStats(files)
+  const statsText = texts.stats(stats.added, stats.removed, stats.files)
   const rootVars = Object.entries(theme)
     .map(([name, value]) => `${name}: ${value};`)
     .join(' ')
@@ -387,18 +520,18 @@ export function buildStandaloneHtml(files: FileDiff[], theme: Record<string, str
     const commentPath = newPath !== '' && newPath !== '/dev/null' ? newPath : oldPath
     const rows = file.rows.length === 0
       ? `<div class="dsh-cr-gaprow">${escapeHtml(file.meta.join(' · ') || file.status)}</div>`
-      : file.rows.map((row) => rowHtml(row, lang, commentPath)).join('')
-    const head = `<header class="filehead"><span class="badge">${STANDALONE_STATUS_LABEL[file.status]}</span><span class="path">${escapeHtml(path)}</span>`
+      : file.rows.map((row) => rowHtml(row, lang, commentPath, texts.noNewlineTitle)).join('')
+    const head = `<header class="filehead"><span class="badge">${texts.status[file.status]}</span><span class="path">${escapeHtml(path)}</span>`
       + (meta.length > 0 ? `<span class="meta">${escapeHtml(meta.join(' · '))}</span>` : '')
       + '</header>'
     return `<section class="file" id="file-${index}">${head}<div class="dsh-cr-grid">${rows}</div></section>`
   }).join('')
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${lang === 'zh' ? 'zh-CN' : 'en'}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Code Review · +${stats.added} −${stats.removed} · ${stats.files} 个文件</title>
+<title>Code Review · ${statsText}</title>
 <style>
 :root { ${rootVars} }
 ${STANDALONE_CSS}
@@ -406,21 +539,21 @@ ${STANDALONE_CSS}
 </head>
 <body>
 <header class="topbar">
-  <span class="stats">+${stats.added} −${stats.removed} · ${stats.files} 个文件</span>
+  <span class="stats">${statsText}</span>
   <span class="topbar-actions">
-    <button class="btn" id="submit-comments" type="button">提交评论</button>
-    <button class="btn" id="copy-raw" type="button">复制原始 diff</button>
+    <button class="btn" id="submit-comments" type="button">${texts.submitComments}</button>
+    <button class="btn" id="copy-raw" type="button">${texts.copyRaw}</button>
   </span>
 </header>
 <div class="submit-panel" id="submit-panel" hidden>
-  <span class="submit-hint">把全部评论提交到 DSH 对话框:</span>
-  <button class="btn" id="submit-lgtm" type="button">Looks Good To Me ✓</button>
-  <button class="btn" id="submit-plain" type="button">仅提交评论</button>
+  <span class="submit-hint">${texts.submitHint}</span>
+  <button class="btn" id="submit-lgtm" type="button">${texts.submitLgtm}</button>
+  <button class="btn" id="submit-plain" type="button">${texts.submitPlain}</button>
 </div>
 <nav class="sidenav">${nav}</nav>
 <main>${sections}</main>
 <div class="rawwrap">
-  <details><summary class="rawsummary">原始 diff 文本</summary>
+  <details><summary class="rawsummary">${texts.rawSummary}</summary>
   <pre class="rawpre">${escapeHtml(rawText)}</pre>
   </details>
 </div>
@@ -430,8 +563,8 @@ document.getElementById('copy-raw').addEventListener('click', function (event) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(raw).then(function () {
       var btn = event.currentTarget
-      btn.textContent = '已复制'
-      setTimeout(function () { btn.textContent = '复制原始 diff' }, 1200)
+      btn.textContent = T.copied
+      setTimeout(function () { btn.textContent = T.copyRaw }, 1200)
     })
   }
 })
@@ -439,6 +572,7 @@ document.getElementById('copy-raw').addEventListener('click', function (event) {
 <script>
 /* 行内评论:点击行号格提评论,攒齐后提交回 DSH 对话框(postMessage)。 */
 (function () {
+  var T = ${JSON.stringify(stringTexts(texts))}
   var comments = []
   var draft = null
   var submitBtn = document.getElementById('submit-comments')
@@ -451,7 +585,7 @@ document.getElementById('copy-raw').addEventListener('click', function (event) {
   }
   function syncSubmit() {
     if (!submitBtn) return
-    submitBtn.textContent = comments.length === 0 ? '提交评论' : '提交评论 (' + comments.length + ')'
+    submitBtn.textContent = comments.length === 0 ? T.submitComments : T.submitComments + ' (' + comments.length + ')'
   }
   function sameLine(a, b) {
     return a.path === b.path && a.lineNo === b.lineNo && a.side === b.side
@@ -500,10 +634,10 @@ document.getElementById('copy-raw').addEventListener('click', function (event) {
       existing.forEach(function (c) { html += '<div class="comment-item">' + esc(c.text) + '</div>' })
       html += '</div>'
     }
-    html += '<textarea class="comment-input" placeholder="在此行添加评论…"></textarea>'
+    html += '<textarea class="comment-input" placeholder="' + T.commentPlaceholder + '"></textarea>'
     html += '<div class="comment-actions">'
-      + '<button class="btn" type="button" data-act="save">添加评论</button>'
-      + '<button class="btn" type="button" data-act="cancel">取消</button>'
+      + '<button class="btn" type="button" data-act="save">' + T.addComment + '</button>'
+      + '<button class="btn" type="button" data-act="cancel">' + T.cancel + '</button>'
       + '</div>'
     draft.innerHTML = html
     num.parentElement.insertAdjacentElement('afterend', draft)
@@ -530,7 +664,7 @@ document.getElementById('copy-raw').addEventListener('click', function (event) {
     if (comments.length === 0) return
     var target = window.opener
     if (!target) {
-      alert('原来的 DSH 页面已关闭,无法回传评论')
+      alert(T.openerClosed)
       return
     }
     target.postMessage({
@@ -565,9 +699,9 @@ document.getElementById('copy-raw').addEventListener('click', function (event) {
     var data = event.data
     if (!data || data.type !== 'dsh-code-review-ack') return
     if (data.ok === false) {
-      alert('未能写入 DSH 对话框:当前没有打开中的会话')
+      alert(T.noSession)
     } else {
-      submitBtn.textContent = '已发送 ✓'
+      submitBtn.textContent = T.sent
       setTimeout(syncSubmit, 3000)
     }
   })

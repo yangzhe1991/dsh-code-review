@@ -73,7 +73,7 @@ await writeFile('lib/types/index.d.ts', [
 await writeFile('lib/types/client/index.d.ts', [
   '/** dsh-code-review 插件,浏览器半。 */',
   "import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client';",
-  '/** 需要的 client 服务:slots。 */',
+  '/** 需要的 client 服务:slots、locale。 */',
   'export declare const inject: string[];',
   '/** Client 插件 body。 */',
   'export declare function apply(ctx: ClientContext): void;',
