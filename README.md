@@ -24,6 +24,14 @@ The conversation itself stays untouched: when a git diff shows up, a small **"op
 - 📜 **Full-page scrolling** — no height caps; thousands of lines scroll naturally, and long lines wrap.
 - 💬 **Inline comments** — hover any line number and click to add a comment right on that line (like GitHub reviews). Comments accumulate with a per-line count badge; when done, submit them all at once — as **Looks Good To Me ✓** or **plain comments** — and they are written into the DSH composer as `file:line — comment` lines, ready to send to the agent.
 
+## Screenshots
+
+![A diff code block in the conversation: collapsed to its title row with the "open in new tab" and "expand" buttons](https://raw.githubusercontent.com/yangzhe1991/dsh-code-review/main/1.jpg)
+
+![The standalone review page: two-column side-by-side view with line numbers, add/remove coloring, syntax and character-level highlighting, file navigation sidebar and stats bar](https://raw.githubusercontent.com/yangzhe1991/dsh-code-review/main/2.jpg)
+
+![Inline comments: a comment draft on a line, comment-count badge on the gutter, and the submit panel with Looks Good To Me / plain-comment choices](https://raw.githubusercontent.com/yangzhe1991/dsh-code-review/main/3.jpg)
+
 ### Where the button appears
 
 1. **Markdown code blocks** in assistant messages — a ```` ```diff ```` / ```` ```patch ```` fence, or any code block whose content looks like a git diff (e.g. pasted inside a `text` fence). The block is **collapsed by default** (just the title row + buttons), with an "expand/collapse" toggle if you want to read the raw text inline.

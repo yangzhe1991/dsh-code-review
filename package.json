@@ -1,6 +1,6 @@
 {
   "name": "@yangzhe1991/dsh-code-review",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DSH Web 插件:git diff 一键打开独立双列 Code Review 页,支持语法高亮与行内评论 | DSH web plugin: one-click standalone two-column code review page for git diff, with syntax highlighting & inline comments",
   "publishConfig": {
     "access": "public"

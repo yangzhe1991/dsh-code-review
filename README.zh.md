@@ -24,6 +24,14 @@
 - 📜 **整页滚动** —— 无高度限制,几千行自然滚动,超长行折行显示。
 - 💬 **行内评论** —— 悬停任意行号点击即可在该行提评论(类似 GitHub review),行号旁显示评论数徽章;攒齐后一次性提交 —— 可选 **Looks Good To Me ✓** 或**纯评论**,提交后自动写入 DSH 对话框(`文件名:行号 — 评论` 逐条列出),直接发给 agent。
 
+## 截图
+
+![对话中的 diff 代码块:折叠成标题行,带「在新标签页打开」与「展开」按钮](https://raw.githubusercontent.com/yangzhe1991/dsh-code-review/main/1.jpg)
+
+![独立审查页:双列并排视图,行号、增删配色、语法与字符级高亮、文件导航侧栏与统计条](https://raw.githubusercontent.com/yangzhe1991/dsh-code-review/main/2.jpg)
+
+![行内评论:行上展开的评论输入框、行号旁的评论数徽章、顶部 Looks Good To Me / 纯评论提交面板](https://raw.githubusercontent.com/yangzhe1991/dsh-code-review/main/3.jpg)
+
 ### 按钮出现的位置
 
 1. **assistant 消息里的 markdown 代码块** —— ```` ```diff ```` / ```` ```patch ```` 语言标签,或内容形似 git diff 的任意代码块(比如贴在 `text` 围栏里)。代码块**默认折叠**(只留标题行 + 按钮),带「展开/收起」开关,想看原始文本就内联展开。
