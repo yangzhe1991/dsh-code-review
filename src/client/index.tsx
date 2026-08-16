@@ -53,8 +53,25 @@ let styleInjected = false
 // —— 按钮样式(官方语义变量,深浅主题自动适配)——
 
 const BUTTON_CSS = `
+/* 主按钮:「在新标签页打开」—— 品牌蓝实心 + 白字,深浅主题都醒目 */
 .dsh-cr-openbtn {
   margin-left: auto;
+  flex: none;
+  font-size: 12px;
+  line-height: 18px;
+  color: #fff;
+  background: var(--dsw-alias-state-business-primary, #3b6fe0);
+  border: none;
+  border-radius: 8px;
+  padding: 2px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dsh-cr-openbtn:hover {
+  filter: brightness(1.1);
+}
+/* 次按钮:「展开/收起」—— 保持低调,不与主按钮抢视线 */
+.dsh-cr-foldbtn {
   flex: none;
   font-size: 12px;
   line-height: 18px;
@@ -66,7 +83,7 @@ const BUTTON_CSS = `
   cursor: pointer;
   white-space: nowrap;
 }
-.dsh-cr-openbtn:hover {
+.dsh-cr-foldbtn:hover {
   color: var(--dsw-alias-label-primary);
   border-color: var(--dsw-alias-border-l3);
 }
@@ -239,7 +256,7 @@ function ensureButtons(
   if (fold !== null && host.querySelector('[data-dsh-cr-fold]') === null) {
     const btn = document.createElement('button')
     btn.type = 'button'
-    btn.className = 'dsh-cr-openbtn'
+    btn.className = 'dsh-cr-foldbtn'
     btn.dataset.dshCrFold = ''
     btn.textContent = fold.folded ? texts.expand : texts.collapse
     btn.title = fold.folded ? texts.expandTitle : texts.collapseTitle
